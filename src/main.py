@@ -2,8 +2,8 @@ import argparse
 import torch
 import torch.nn as nn
 import numpy as np
-import gym
 import argparse
+import environment
 
 ##########
 # PARSER #
@@ -32,13 +32,7 @@ ITERATIONS = parser.iterations
 
 # environment
 if args.fpp:
-    env: gym.Env = gym.make('FetchPickAndPlace-v1')
-
-    def step(self, action):
-        obs, r, done, _ = env.step(action)
-        obs = np.r_[obs['observation'], obs['achieved_goal'], obs['desired_goal']]
-        obs = torch.from_numpy(obs).float().cuda()
-        return obs, r, done
+    env = environment.FPPEnvironment()
 
     model = nn.Sequential(
         nn.Linear(31, 20),
