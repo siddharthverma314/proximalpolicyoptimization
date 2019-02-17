@@ -5,6 +5,7 @@ import numpy as np
 import argparse
 import environment
 
+
 ##########
 # PARSER #
 ##########
@@ -23,10 +24,10 @@ parser.add_argument('--iterations', help="Maximum timesteps for each actor", typ
 
 args = parser.parse_args()
 
+
 ###########
 # GLOBALS #
 ###########
-
 
 if args.no_gpu and torch.cuda.is_available():
     DEVICE = torch.device('cpu')
@@ -41,13 +42,24 @@ ITERATIONS = args.iterations
 if args.fpp:
     env = environment.FPPEnvironment()
 
-    model = nn.Sequential(
-        nn.Linear(31, 20),
-        nn.ReLU(),
-        nn.Linear(20, 10),
-        nn.ReLU(),
-        nn.Linear(10, 4),
-    ).to(device=DEVICE)
+    class Policy(nn.Module):
+        def __init__(self):
+            nn.Module.__init__(self)
+            self.__policy = nn.Sequential(
+                nn.Linear(31, 20),
+                nn.ReLU(),
+                nn.Linear(20, 10),
+                nn.ReLU(),
+                nn.Linear(10, 4),
+            )
+
+        def forward(self, state):
+            actions = self.__policy(state)
+            dist = torch.distributions.Categorical(probs=actions)
+            chosen = dist.sample()
+            return chosen, actions[chosen]
+
+    policy = Policy().to(device=DEVICE)
 
 elif args.cp:
     env = environment.CPEnvironment()
@@ -68,12 +80,13 @@ elif args.cp:
             chosen = dist.sample()
             return chosen, actions[chosen]
 
-    model = Policy().to(device=DEVICE)
+    policy = Policy().to(device=DEVICE)
 
 
 ###################
 # DATA COLLECTION #
 ###################
+
 
 class Arc:
     """Stores the probability and reward of an arc"""
@@ -84,40 +97,43 @@ class Arc:
     def __repr__(self):
         return f"Arc({self.probs}, {self.rewards})"
 
-
-def collect_data():
+def generate_arc(env, policy):
     """
     Collect data.
 
     Inputs:
-    model - model to use
-    step - function that takes an action and returns (observation, reward, finished)
-    
+    policy - policy to use that returns (action, prob) tuple
+    max_timesteps - number of timesteps to truncate after
+
     Returns: A list of Arc objects.
     """
+    obs = env.reset()
+    arc = Arc()
+    for _ in range(MAX_TIMESTEPS):
+        action, prob = policy(torch.tensor(obs).float().to(DEVICE))
+        obs, r, done = env.step(action.detach().cpu().numpy())
+
+        arc.rewards.append(r)
+        arc.probs.append(prob)
+
+        if done:
+            break
+
+    return arc
+
+
+def generate_data(env, policy):
     data = []
-
-    for i in range(ITERATIONS):
-        obs = env.reset()
-        curr_arc = Arc()
-        for _ in range(MAX_TIMESTEPS):
-            action, prob = model(torch.tensor(obs).float().to(DEVICE))
-            obs, r, done = env.step(action.detach().cpu().numpy())
-
-            curr_arc.rewards.append(r)
-            curr_arc.probs.append(prob)
-
-            if done:
-                break
-
-        data.append(curr_arc)
-    return data 
+    for _ in range(ITERATIONS):
+        data.append(generate_arc(env, policy))
+    return data
 
 
 ####################
 # LOSS CALCULATION #
 ####################
 
+# TODO: Finish this
 
-data = collect_data()
-print(data)
+
+print(generate_data(env, policy))

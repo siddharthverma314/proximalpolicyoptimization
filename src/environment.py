@@ -1,6 +1,9 @@
 import gym
 
+
 class Environment:
+    """Abstraction class for gym.Env"""
+
     def __init__(self, name):
         self.env: gym.Env = gym.make(name)
 
