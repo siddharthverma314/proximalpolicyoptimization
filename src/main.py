@@ -60,6 +60,14 @@ if args.fpp:
             return chosen, actions[chosen]
 
     policy = Policy().to(device=DEVICE)
+    value = nn.Sequential(
+        nn.Linear(31, 20),
+        nn.ReLU(),
+        nn.Linear(20, 10),
+        nn.ReLU(),
+        nn.Linear(10, 4),
+    ).to(device=DEVICE)
+
 
 elif args.cp:
     env = environment.CPEnvironment()
@@ -81,6 +89,12 @@ elif args.cp:
             return chosen, actions[chosen]
 
     policy = Policy().to(device=DEVICE)
+    value = nn.Sequential(
+       nn.Linear(4, 10),
+       nn.ReLU(),
+       nn.Linear(10, 1),
+       nn.ReLU()
+    ).to(device=DEVICE)
 
 
 ###################
@@ -91,13 +105,15 @@ elif args.cp:
 class Arc:
     """Stores the probability and reward of an arc"""
     def __init__(self):
+        self.values = []
         self.probs = []
         self.rewards = []
 
     def __repr__(self):
         return f"Arc({self.probs}, {self.rewards})"
 
-def generate_arc(env, policy):
+
+def generate_arc(env, policy, max_timesteps=None):
     """
     Collect data.
 
@@ -107,25 +123,49 @@ def generate_arc(env, policy):
 
     Returns: A list of Arc objects.
     """
+
+    if not max_timesteps:
+        max_timesteps = MAX_TIMESTEPS
+
     obs = env.reset()
     arc = Arc()
-    for _ in range(MAX_TIMESTEPS):
-        action, prob = policy(torch.tensor(obs).float().to(DEVICE))
+
+    for _ in range(max_timesteps):
+        obs = torch.tensor(obs).float().to(DEVICE)
+        action, prob = policy(obs)
+        v = value(obs)
+
         obs, r, done = env.step(action.detach().cpu().numpy())
 
         arc.rewards.append(r)
         arc.probs.append(prob)
+        arc.values.append(v.detach())
 
         if done:
             break
 
+    process_arc(arc)
     return arc
 
 
-def generate_data(env, policy):
+def process_arc(arc: Arc):
+    """Mutates an arc such that arc.rewards is advantages"""
+    # compute rewards to go
+    rtg = []
+    total = 0
+    for i, v in zip(arc.rewards[::-1], arc.values[::-1]):
+        total += i
+        rtg.append(total - v)
+    arc.rewards = rtg[::-1]
+
+
+def generate_data(env, policy, iterations=None, max_timesteps=None):
+    if not iterations:
+        iterations = ITERATIONS
+
     data = []
-    for _ in range(ITERATIONS):
-        data.append(generate_arc(env, policy))
+    for _ in range(iterations):
+        data.append(generate_arc(env, policy, max_timesteps))
     return data
 
 
@@ -133,7 +173,6 @@ def generate_data(env, policy):
 # LOSS CALCULATION #
 ####################
 
-# TODO: Finish this
 
 
-print(generate_data(env, policy))
+print(generate_data(env, policy, 1, 10))
