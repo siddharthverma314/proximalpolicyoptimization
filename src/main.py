@@ -173,6 +173,7 @@ def generate_data(env, policy, iterations=None, max_timesteps=None):
 # LOSS CALCULATION #
 ####################
 
-
+def ppo_clip_loss(policy, env):
+    policy(env.
 
 print(generate_data(env, policy, 1, 10))
