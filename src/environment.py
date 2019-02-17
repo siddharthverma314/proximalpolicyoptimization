@@ -37,12 +37,12 @@ class Environment:
         return obs
 
 
-class CPEnvironment:
+class CPEnvironment(Environment):
     def __init__(self):
         Environment.__init__(self, 'CartPole-v1')
 
     @staticmethod
-    def __process_obs(obs):
+    def _process_obs(obs):
         return obs
 
 
@@ -51,7 +51,7 @@ class FPPEnvironment(Environment):
         Environment.__init__(self, 'FetchPickAndPlace-v1')
 
     @staticmethod
-    def __process_obs(obs):
+    def _process_obs(obs):
         obs = np.r_[obs['observation'], obs['achieved_goal'], obs['desired_goal']]
         return obs
 
