@@ -4,9 +4,17 @@ import torch.nn as nn
 
 class Policy(nn.Module):
     """Abstract class for a policy"""
+
+    def __init__(self):
+        nn.Module.__init__(self)
     
     @staticmethod
-    def log_prob(probs, action):
+    def prob(probs, action):
+        """Return the probability/density of $$\pi(s|a)$$"""
+        raise NotImplementedError
+
+    @staticmethod
+    def prob(probs, action):
         """Return the log probability/density of $$\pi(s|a)$$"""
         raise NotImplementedError
 
@@ -20,14 +28,19 @@ class DiscretePolicy(Policy):
     """Represents a discrete policy"""
 
     def __init__(self, policy):
+        Policy.__init__(self)
         self.__policy = policy
 
     def forward(self, state):
         return self.__policy(state)
 
     @staticmethod
+    def prob(probs, action):
+        return probs[action]
+
+    @staticmethod
     def log_prob(probs, action):
-        return torch.log(probs[action])
+        return torch.log(DiscretePolicy.prob(probs, action))
 
     @staticmethod
     def choice(probs):
@@ -48,6 +61,7 @@ class ContinuousPolicy(Policy):
                                |
                                |--> var_nn
         """
+        Policy.__init__(self)
         self.__shared_nn = shared_nn
         self.__mean_nn = mean_nn
         self.__var_nn = var_nn
@@ -61,6 +75,10 @@ class ContinuousPolicy(Policy):
     def log_prob(probs, action):
         dist = torch.distributions.Normal(*probs)
         return dist.log_prob(action)
+
+    @staticmethod
+    def prob(probs, action):
+        return torch.exp(ContinuousPolicy.log_prob(probs, action))
 
     @staticmethod
     def choice(probs):
