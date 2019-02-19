@@ -36,15 +36,26 @@ class DiscretePolicy(Policy):
 
 
 class ContinuousPolicy(Policy):
-    """Represents a continuous policy"""
+    """Represents a continuous policy."""
 
-    def __init__(self, mean_nn, var_nn):
-        """policy should return (mean, variance) tuple"""
+    def __init__(self, shared_nn, mean_nn, var_nn):
+        """
+        Defines a Continuous policy. The forward pass consists of three
+        modules, shared_nn, mean_nn and var_nn. The computational diagram is as
+        follows:
+
+        state ---> shared_nn --+--> mean_nn
+                               |
+                               |--> var_nn
+        """
+        self.__shared_nn = shared_nn
         self.__mean_nn = mean_nn
         self.__var_nn = var_nn
 
     def forward(self, state):
-        return self.__policy(state)
+        """Returns (mean, var) tuple"""
+        shared = self.shared_nn(state)
+        return self.__mean_nn(shared), self.__var_nn(shared)
 
     @staticmethod
     def log_prob(probs, action):
@@ -53,6 +64,6 @@ class ContinuousPolicy(Policy):
 
     @staticmethod
     def choice(probs):
-        dist = torch.distributions.Categorical(probs)
+        dist = torch.distributions.Normal(*probs)
         return dist.sample()
 

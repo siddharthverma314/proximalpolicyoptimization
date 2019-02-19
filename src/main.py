@@ -4,6 +4,7 @@ import torch.nn as nn
 import numpy as np
 import argparse
 import environment
+import policy
 
 
 ##########
@@ -72,28 +73,14 @@ if args.fpp:
 elif args.cp:
     env = environment.CPEnvironment()
 
-    class Policy(nn.Module):
-        def __init__(self):
-            nn.Module.__init__(self)
-            self.__policy = nn.Sequential(
-               nn.Linear(4, 10),
-               nn.ReLU(),
-               nn.Linear(10, 2),
-               nn.Softmax(dim=0),
-            )
-
-        def forward(self, state):
-            actions = self.__policy(state)
-            dist = torch.distributions.Categorical(probs=actions)
-            chosen = dist.sample()
-            return chosen, actions[chosen]
+    policy = policy.DiscretePolicy(nn.Sequential(nn.Linear(4, 10), nn.ReLU(), nn.Linear(10, 2), nn.Softmax(dim=0)))
 
     policy = Policy().to(device=DEVICE)
     value = nn.Sequential(
-       nn.Linear(4, 10),
-       nn.ReLU(),
-       nn.Linear(10, 1),
-       nn.ReLU()
+        nn.Linear(4, 10),
+        nn.ReLU(),
+        nn.Linear(10, 1),
+        nn.ReLU()
     ).to(device=DEVICE)
 
 
