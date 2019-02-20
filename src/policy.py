@@ -36,7 +36,10 @@ class DiscretePolicy(Policy):
 
     @staticmethod
     def prob(probs, action):
-        return probs[action]
+        if action.dim() == 0:
+            return probs[action]
+        elif action.dim() == 1:
+            return probs[torch.arange(len(action)), action]
 
     @staticmethod
     def log_prob(probs, action):

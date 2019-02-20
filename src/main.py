@@ -2,6 +2,7 @@ import argparse
 import torch
 import torch.nn as nn
 import numpy as np
+import random
 import argparse
 import environment
 from policy import Policy, DiscretePolicy, ContinuousPolicy
@@ -22,9 +23,11 @@ parser.add_argument("--no-gpu", action='store_true')
 
 parser.add_argument('--timesteps', help="Maximum timesteps for each actor", type=int, default=1000)
 parser.add_argument('--data-iterations', help="Number of iterations in data collection", type=int, default=100)
-parser.add_argument('--policy-iterations', help="Number of iterations in data collection", type=int, default=100)
-parser.add_argument('--value-iterations', help="Number of iterations in data collection", type=int, default=100)
+parser.add_argument('--policy-iterations', help="Number of iterations in policy optimization", type=int, default=1000)
+parser.add_argument('--policy-batch-size', help="Policy batch size", type=int, default=500)
+parser.add_argument('--value-iterations', help="Number of iterations in value optimization", type=int, default=100)
 parser.add_argument('--epsilon', help="Epsilon in loss", type=float, default=1e-2)
+parser.add_argument('--epochs', type=int, default=100)
 
 args = parser.parse_args()
 
@@ -42,8 +45,10 @@ else:
 MAX_TIMESTEPS = args.timesteps
 DATA_ITERATIONS = args.data_iterations
 POLICY_ITERATIONS = args.policy_iterations
+POLICY_BATCH_SIZE = args.policy_batch_size
 VALUE_ITERATIONS = args.value_iterations
 EPSILON = args.epsilon
+EPOCHS = args.epochs
 
 # environment
 if args.fpp:
@@ -92,8 +97,8 @@ elif args.cp:
         nn.ReLU()
     ).to(device=DEVICE)
 
-policy_optim = torch.optim.Adam(policy.parameters())
-value_optim = torch.optim.Adam(value.parameters())
+policy_optim = torch.optim.SGD(policy.parameters(), 0.04)
+value_optim = torch.optim.SGD(value.parameters(), 0.01)
 
 ###################
 # DATA COLLECTION #
@@ -120,7 +125,7 @@ class Arc:
         self.probs.append(prob.detach())
 
     def compute(self):
-        """Computes rewards to go and advantages"""
+        """Computes rewards to go and advantages and converts data to tensors"""
         total = 0
         for i, v in zip(self.rewards[::-1], self.values[::-1]):
             total += i
@@ -128,6 +133,13 @@ class Arc:
             self.advantages.append(total - v)
         self.rewards_to_go.reverse()
         self.advantages.reverse()
+
+        # convert to tensors on DEVICE
+        self.states = torch.stack(self.states)
+        self.actions = torch.stack(self.actions)
+        self.rewards_to_go = torch.tensor(self.rewards_to_go).float().to(device=DEVICE)
+        self.advantages = torch.tensor(self.advantages).float().to(device=DEVICE)
+        self.probs = torch.stack(self.probs)
 
     def __repr__(self):
         return f"Arc({self.rewards})"
@@ -162,6 +174,8 @@ def generate_arc(env: environment.Environment, policy) -> Arc:
             break
 
     arc.compute()
+    # DEBUGGING
+    print(arc.rewards_to_go[0])
     return arc
 
 
@@ -176,21 +190,15 @@ def generate_data(env, policy):
 # LOSS CALCULATION #
 ####################
 
-# TODO: Vectorize the losses, probably the arcs can be vectorized
-# TODO: Get coefficients right for losses
-
 def L(policy: Policy, arc: Arc):
-    for s, a, p, adv in zip(arc.states, arc.actions, arc.probs, arc.advantages):
-        p_new = policy.prob(policy(s), a)
-        policy_factor = p_new / p * adv
+    p_new = policy.prob(policy(arc.states), arc.actions)
+    policy_factor = p_new / arc.probs * arc.advantages
 
-        # compute G
-        if adv >= 0:
-            g = (1 + EPSILON) * adv
-        else:
-            g = (1 - EPSILON) * adv
+    # compute G
+    g = ((arc.advantages >= 0) * 2  - 1).float() * EPSILON
+    g = (g + 1) * arc.advantages
 
-        return torch.min(policy_factor, g)
+    return torch.min(policy_factor, g).mean()
 
 
 def ppo_clip_loss(policy, arcs):
@@ -199,8 +207,7 @@ def ppo_clip_loss(policy, arcs):
     for arc in arcs:
         loss += L(policy, arc)
     loss /= len(arcs)
-    loss /= len(arcs[0].rewards)
-    return loss
+    return -loss
 
 
 def optimize_policy(policy, arcs):
@@ -208,7 +215,9 @@ def optimize_policy(policy, arcs):
         policy_optim.zero_grad()
         value_optim.zero_grad()
 
-        loss = ppo_clip_loss(policy, arcs)
+        arc_batch = [arcs[random.randrange(len(arcs))] for i in range(POLICY_BATCH_SIZE)]
+
+        loss = ppo_clip_loss(policy, arc_batch)
         loss.backward()
 
         policy_optim.step()
@@ -217,11 +226,10 @@ def optimize_policy(policy, arcs):
 def value_loss(value, arcs):
     loss = 0
     for arc in arcs:
-        for r, s in zip(arc.rewards_to_go, arc.states):
-            v = value(s)
-            loss += (r - v)**2
+        v = value(arc.states)
+        dot = arc.rewards_to_go - v
+        loss += (dot * dot).mean()
     loss /= len(arcs)
-    loss /= len(arcs[0].rewards)
     return loss
 
 
@@ -235,10 +243,12 @@ def optimize_value(value, arcs):
 
         value_optim.step()
 
-arcs = generate_data(env, policy)
-print(ppo_clip_loss(policy, arcs))
-print(value_loss(value, arcs))
-optimize_policy(policy, arcs)
-optimize_value(value, arcs)
-print(ppo_clip_loss(policy, arcs))
-print(value_loss(value, arcs))
+
+for _ in range(EPOCHS):
+    arcs = generate_data(env, policy)
+    print(ppo_clip_loss(policy, arcs))
+    print(value_loss(value, arcs))
+    optimize_policy(policy, arcs)
+    optimize_value(value, arcs)
+    print(ppo_clip_loss(policy, arcs))
+    print(value_loss(value, arcs))
