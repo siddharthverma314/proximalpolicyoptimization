@@ -10,6 +10,7 @@ import logging as log
 import datetime
 import os
 
+
 ##########
 # PARSER #
 ##########
@@ -29,7 +30,7 @@ parser.add_argument('--policy-iterations', help="Number of iterations in policy 
 parser.add_argument('--value-iterations', help="Number of iterations in value optimization", type=int, default=100)
 parser.add_argument('--epsilon', help="Epsilon in loss", type=float, default=1e-2)
 parser.add_argument('--discount', help="Discount factor", type=float, default=0.8)
-parser.add_argument('--log', help="Whether to store a log", default='store_true')
+parser.add_argument('--log', help="Whether to store a log", action='store_true')
 parser.add_argument('--epochs', type=int, default=100)
 
 args = parser.parse_args()
@@ -111,8 +112,8 @@ elif args.cp:
         nn.ReLU()
     ).to(DEVICE)
 
-policy_optim = torch.optim.SGD(policy.parameters(), 0.04)
-value_optim = torch.optim.SGD(value.parameters(), 0.01)
+policy_optim = torch.optim.Adam(policy.parameters())
+value_optim = torch.optim.Adam(value.parameters())
 
 ####################
 # LOSS CALCULATION #
@@ -140,7 +141,7 @@ def optimize_policy(policy, arc):
 
 
 def value_loss(value, arc):
-    v = value(arc.states)
+    v = value(arc.states).squeeze()
     dot = (arc.rewards_to_go - v)**2
     loss = dot.mean()
     log.debug(f"Value Loss: {loss.item()}")

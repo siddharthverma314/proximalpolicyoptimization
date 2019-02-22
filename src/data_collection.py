@@ -33,7 +33,7 @@ class Arc:
             self.rewards_to_go[i] += self.rewards_to_go[i+1]
             i -= 1
 
-        self.advantages = self.rewards_to_go - value_fn(self.states)
+        self.advantages = (self.rewards_to_go - value_fn(self.states).squeeze()).detach()
 
     def __repr__(self):
         return f"Arc({self.rewards})"
@@ -83,7 +83,7 @@ def generate_data(env, policy, value_fn, data_iterations, max_timesteps):
     data_iterations - number of experiments
     max_timesteps - timestep cutoff
 
-    Returns: (rewards_to_go, advantages, probs)
+    Returns: Arc with all the compiled data in it
     """
 
     result = Arc()
