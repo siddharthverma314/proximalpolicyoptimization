@@ -26,12 +26,12 @@ parser.add_argument("--no-gpu", action='store_true')
 
 parser.add_argument('--timesteps', help="Maximum timesteps for each actor", type=int, default=1000)
 parser.add_argument('--data-iterations', help="Number of iterations in data collection", type=int, default=100)
-parser.add_argument('--policy-iterations', help="Number of iterations in policy optimization", type=int, default=1000)
+parser.add_argument('--policy-iterations', help="Number of iterations in policy optimization", type=int, default=100)
 parser.add_argument('--value-iterations', help="Number of iterations in value optimization", type=int, default=100)
 parser.add_argument('--epsilon', help="Epsilon in loss", type=float, default=1e-2)
 parser.add_argument('--discount', help="Discount factor", type=float, default=0.8)
 parser.add_argument('--log', help="Whether to store a log", action='store_true')
-parser.add_argument('--epochs', type=int, default=100)
+parser.add_argument('--epochs', type=int, default=50)
 
 args = parser.parse_args()
 
@@ -41,13 +41,13 @@ args = parser.parse_args()
 ###########
 
 if args.log:
-    name = datetime.datetime.now().strftime("%Y%m%d%H%m%S")
+    name = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     os.mkdir(f"log/{name}")
     log.basicConfig(filename=f"log/{name}/log", level=log.DEBUG)
 else:
     log.basicConfig(level=log.DEBUG)
 
-log.info("Started program at {str(datetime.datetime.now())}")
+log.info(f"Started program at {str(datetime.datetime.now())}")
 log.info(f"Args: {str(args)}")
 
 if args.no_gpu and torch.cuda.is_available():
@@ -107,13 +107,13 @@ elif args.cp:
 
     value = nn.Sequential(
         nn.Linear(4, 10),
-        nn.ReLU(),
+        nn.Sigmoid(),
         nn.Linear(10, 1),
         nn.ReLU()
     ).to(DEVICE)
 
-policy_optim = torch.optim.Adam(policy.parameters())
-value_optim = torch.optim.Adam(value.parameters())
+policy_optim = torch.optim.SGD(policy.parameters(), 0.01)
+value_optim = torch.optim.SGD(value.parameters(), 0.01)
 
 ####################
 # LOSS CALCULATION #
@@ -121,22 +121,27 @@ value_optim = torch.optim.Adam(value.parameters())
 
 def ppo_clip_loss(policy, arc):
     # simplification taken from OpenAI spinning up
-    p_new = policy.prob(policy(arc.states), arc.actions)
-    policy_factor = p_new / arc.probs * arc.advantages
+    r = policy.prob(policy(arc.states), arc.actions) / arc.probs
+    policy_factor = r * arc.advantages
 
     # compute g
-    g = ((arc.advantages >= 0) * 2  - 1).float() * EPSILON
-    g = (g + 1) * arc.advantages
+    g = ((arc.advantages >= 0) * 2  - 1).float() * EPSILON + 1
+    g = g.detach() * arc.advantages
 
-    loss = torch.min(policy_factor, g).mean()
-    log.debug(f"Policy Loss: {loss.item()}")
-    return -loss
+    return torch.min(policy_factor, g).mean()
+
+
+def vanilla_policy_loss(policy, arc):
+    logs = policy.log_prob(policy(arc.states), arc.actions)
+    return (logs * arc.advantages).mean()
 
 
 def optimize_policy(policy, arc):
     for _ in range(POLICY_ITERATIONS):
-        loss = ppo_clip_loss(policy, arc)
-        loss.backward()
+        #loss = ppo_clip_loss(policy, arc)
+        loss = vanilla_policy_loss(policy, arc)
+        log.debug(f"Policy Loss: {loss.item()}")
+        (-loss).backward()
         policy_optim.step()
 
 
@@ -149,7 +154,7 @@ def value_loss(value, arc):
 
 
 def optimize_value(value, arc):
-    for _ in range(POLICY_ITERATIONS):
+    for _ in range(VALUE_ITERATIONS):
         loss = value_loss(value, arc)
         loss.backward()
         value_optim.step()

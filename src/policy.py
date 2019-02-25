@@ -14,7 +14,7 @@ class Policy(nn.Module):
         raise NotImplementedError
 
     @staticmethod
-    def prob(probs, action):
+    def log_prob(probs, action):
         """Return the log probability/density of $$\pi(s|a)$$"""
         raise NotImplementedError
 
@@ -26,6 +26,7 @@ class Policy(nn.Module):
 
 class DiscretePolicy(Policy):
     """Represents a discrete policy"""
+    EPSILON = 1e-10
 
     def __init__(self, policy):
         Policy.__init__(self)
@@ -43,7 +44,7 @@ class DiscretePolicy(Policy):
 
     @staticmethod
     def log_prob(probs, action):
-        return torch.log(DiscretePolicy.prob(probs, action))
+        return torch.log(DiscretePolicy.EPSILON + DiscretePolicy.prob(probs, action))
 
     @staticmethod
     def choice(probs):

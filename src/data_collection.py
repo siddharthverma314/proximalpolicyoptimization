@@ -21,10 +21,10 @@ class Arc:
     def compute(self, value_fn):
         """Computes rewards to go and advantages and converts data to tensors"""
         # stack tensors
-        self.states = torch.stack(self.states)
-        self.actions = torch.stack(self.actions)
-        self.rewards = torch.stack(self.rewards)
-        self.probs = torch.stack(self.probs)
+        self.states = torch.stack(self.states).detach()
+        self.actions = torch.stack(self.actions).detach()
+        self.rewards = torch.stack(self.rewards).detach()
+        self.probs = torch.stack(self.probs).detach()
 
         # compute rewards to go
         self.rewards_to_go = torch.clone(self.rewards)
@@ -32,7 +32,9 @@ class Arc:
         while i >= 0:
             self.rewards_to_go[i] += self.rewards_to_go[i+1]
             i -= 1
+        self.rewards_to_go = self.rewards_to_go.detach()
 
+        #TODO: Work on new advantage function
         self.advantages = (self.rewards_to_go - value_fn(self.states).squeeze()).detach()
 
     def __repr__(self):
@@ -56,7 +58,7 @@ def generate_arc(env, policy, value_fn, max_timesteps) -> Arc:
     total_r = 0
 
     for _ in range(max_timesteps):
-        probs = policy(obs)
+        probs = policy(obs).detach()
         action = policy.choice(probs)
         prob = policy.prob(probs, action)
 

@@ -3,7 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser('Creates a plot of the information in a log file')
-parser.add_argument('--log-dir')
+parser.add_argument('log_dir')
+parser.add_argument('--log-plot', action='store_true')
 args = parser.parse_args()
 
 
@@ -38,7 +39,8 @@ plt.fill_between(x, means-stds, means+stds, facecolor="#FF0000", alpha=0.2)
 plt.savefig(f"{logdir}/plot.png")
 plt.show()
 
-plt.plot(np.log(x), means, 'r-')
-plt.fill_between(np.log(x), means-stds, means+stds, facecolor="#FF0000", alpha=0.2)
-plt.savefig(f"{logdir}/plot_log.png")
-plt.show()
+if args.log_plot:
+    plt.plot(np.log(x), means, 'r-')
+    plt.fill_between(np.log(x), means-stds, means+stds, facecolor="#FF0000", alpha=0.2)
+    plt.savefig(f"{logdir}/plot_log.png")
+    plt.show()
