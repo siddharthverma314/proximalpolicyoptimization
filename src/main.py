@@ -28,7 +28,7 @@ parser.add_argument('--timesteps', help="Maximum timesteps for each actor", type
 parser.add_argument('--data-iterations', help="Number of iterations in data collection", type=int, default=100)
 parser.add_argument('--policy-iterations', help="Number of iterations in policy optimization", type=int, default=100)
 parser.add_argument('--value-iterations', help="Number of iterations in value optimization", type=int, default=100)
-parser.add_argument('--epsilon', help="Epsilon in loss", type=float, default=1e-2)
+parser.add_argument('--epsilon', help="Epsilon in loss", type=float, default=0.2)
 parser.add_argument('--discount', help="Discount factor", type=float, default=0.8)
 parser.add_argument('--log', help="Whether to store a log", action='store_true')
 parser.add_argument('--epochs', type=int, default=50)
@@ -100,20 +100,21 @@ elif args.cp:
     env = environment.CPEnvironment(DEVICE)
 
     policy = DiscretePolicy(nn.Sequential(
-        nn.Linear(4, 10),
+        nn.Linear(4, 5),
         nn.ReLU(),
-        nn.Linear(10, 2),
-        nn.Softmax(dim=0))).to(DEVICE)
+        nn.Linear(5, 2),
+        nn.Softmax(dim=-1))).to(DEVICE)
 
     value = nn.Sequential(
-        nn.Linear(4, 10),
+        nn.Linear(4, 5),
         nn.Sigmoid(),
-        nn.Linear(10, 1),
+        nn.Linear(5, 1),
         nn.ReLU()
     ).to(DEVICE)
 
-policy_optim = torch.optim.SGD(policy.parameters(), 0.01)
-value_optim = torch.optim.SGD(value.parameters(), 0.01)
+policy_optim = torch.optim.Adam(policy.parameters())
+value_optim = torch.optim.Adam(value.parameters())
+
 
 ####################
 # LOSS CALCULATION #
@@ -131,16 +132,11 @@ def ppo_clip_loss(policy, arc):
     return torch.min(policy_factor, g).mean()
 
 
-def vanilla_policy_loss(policy, arc):
-    logs = policy.log_prob(policy(arc.states), arc.actions)
-    return (logs * arc.advantages).mean()
-
-
 def optimize_policy(policy, arc):
     for _ in range(POLICY_ITERATIONS):
-        #loss = ppo_clip_loss(policy, arc)
-        loss = vanilla_policy_loss(policy, arc)
+        loss = ppo_clip_loss(policy, arc)
         log.debug(f"Policy Loss: {loss.item()}")
+        policy_optim.zero_grad()
         (-loss).backward()
         policy_optim.step()
 
@@ -149,13 +145,14 @@ def value_loss(value, arc):
     v = value(arc.states).squeeze()
     dot = (arc.rewards_to_go - v)**2
     loss = dot.mean()
-    log.debug(f"Value Loss: {loss.item()}")
     return loss
 
 
 def optimize_value(value, arc):
     for _ in range(VALUE_ITERATIONS):
         loss = value_loss(value, arc)
+        log.debug(f"Value Loss: {loss.item()}")
+        value_optim.zero_grad()
         loss.backward()
         value_optim.step()
 
@@ -163,7 +160,7 @@ def optimize_value(value, arc):
 for i in range(EPOCHS):
     log.info(f"Epoch {i}")
     log.info("Collecting new data")
-    arc = data_collection.generate_data(env, policy, value, DATA_ITERATIONS, MAX_TIMESTEPS)
+    arc = data_collection.generate_data(env, policy, value, DATA_ITERATIONS, MAX_TIMESTEPS, DISCOUNT)
     log.info("Optimizing policy")
     optimize_policy(policy, arc)
     log.info("Optimizing value function")

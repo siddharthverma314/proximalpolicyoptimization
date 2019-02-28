@@ -60,5 +60,5 @@ if __name__ == "__main__":
 
     for _ in range(ITERATIONS):
         for _ in range(BATCH_SIZE):
-            train_iteration(True)
+            train_iteration(False)
     env.close()

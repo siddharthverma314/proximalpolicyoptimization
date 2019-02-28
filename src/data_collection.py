@@ -3,7 +3,7 @@ import torch
 
 class Arc:
     """Stores the probability and reward of an arc"""
-    def __init__(self):
+    def __init__(self, gamma):
         self.states = []
         self.actions = []
         self.rewards = []
@@ -11,6 +11,7 @@ class Arc:
 
         self.rewards_to_go = []
         self.advantages = []
+        self.gamma = gamma
 
     def add_obs(self, state, action, reward, prob):
         self.states.append(state)
@@ -30,9 +31,8 @@ class Arc:
         self.rewards_to_go = torch.clone(self.rewards)
         i = len(self.rewards_to_go) - 2
         while i >= 0:
-            self.rewards_to_go[i] += self.rewards_to_go[i+1]
+            self.rewards_to_go[i] += self.gamma * self.rewards_to_go[i+1]
             i -= 1
-        self.rewards_to_go = self.rewards_to_go.detach()
 
         #TODO: Work on new advantage function
         self.advantages = (self.rewards_to_go - value_fn(self.states).squeeze()).detach()
@@ -41,7 +41,7 @@ class Arc:
         return f"Arc({self.rewards})"
 
 
-def generate_arc(env, policy, value_fn, max_timesteps) -> Arc:
+def generate_arc(env, policy, value_fn, max_timesteps, gamma) -> Arc:
     """
     Collect data.
 
@@ -54,18 +54,19 @@ def generate_arc(env, policy, value_fn, max_timesteps) -> Arc:
     """
 
     obs = env.reset()
-    arc = Arc()
+    arc = Arc(gamma)
     total_r = 0
 
     for _ in range(max_timesteps):
-        probs = policy(obs).detach()
+        probs = policy(obs)
         action = policy.choice(probs)
         prob = policy.prob(probs, action)
 
-        obs, r, done = env.step(action.detach().cpu().numpy())
+        obs_new, r, done = env.step(action.detach().cpu().numpy())
         total_r += r
 
         arc.add_obs(obs, action, r, prob)
+        obs = obs_new
 
         if done:
             break
@@ -75,7 +76,7 @@ def generate_arc(env, policy, value_fn, max_timesteps) -> Arc:
     return arc
 
 
-def generate_data(env, policy, value_fn, data_iterations, max_timesteps):
+def generate_data(env, policy, value_fn, data_iterations, max_timesteps, gamma):
     """
     Generates a bunch of data and compiles it.
     
@@ -88,10 +89,10 @@ def generate_data(env, policy, value_fn, data_iterations, max_timesteps):
     Returns: Arc with all the compiled data in it
     """
 
-    result = Arc()
+    result = Arc(gamma)
 
     for _ in range(data_iterations):
-        a = generate_arc(env, policy, value_fn, max_timesteps)
+        a = generate_arc(env, policy, value_fn, max_timesteps, gamma)
         result.states.append(a.states)
         result.actions.append(a.actions)
         result.rewards.append(a.rewards)

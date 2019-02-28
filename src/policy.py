@@ -26,7 +26,7 @@ class Policy(nn.Module):
 
 class DiscretePolicy(Policy):
     """Represents a discrete policy"""
-    EPSILON = 1e-10
+    EPSILON = 1e-20
 
     def __init__(self, policy):
         Policy.__init__(self)
@@ -48,7 +48,7 @@ class DiscretePolicy(Policy):
 
     @staticmethod
     def choice(probs):
-        dist = torch.distributions.Categorical(probs)
+        dist = torch.distributions.Categorical(probs=probs)
         return dist.sample()
 
 
