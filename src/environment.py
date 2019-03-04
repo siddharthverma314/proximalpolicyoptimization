@@ -1,22 +1,22 @@
+"""Module for handling gym.Env abstraction"""
+
 import gym
 import torch
+import numpy as np
 
-
-###########################
-# ENVIRONMENT ABSTRACTION #
-###########################
 
 class Environment:
     """Abstraction class for gym.Env"""
+    ENVIRONMENT = None
 
-    def __init__(self, name, device):
-        self.env: gym.Env = gym.make(name)
+    def __init__(self, device):
+        self.env: gym.Env = gym.make(self.ENVIRONMENT)
         self.device = device
 
     @staticmethod
     def _process_obs(obs):
-        """Process an observation. Must be overrided."""
-        raise NotImplementedError
+        """Process an observation. Must be overrided for special behavior."""
+        return obs
 
     def step(self, action):
         """
@@ -26,43 +26,42 @@ class Environment:
         action - A numpy array
 
         Returns:
-        The tuple observation, reward, finished. Observation is a numpy array
-        
+        The tuple observation, reward, finished. Observation and rewards are
+        Pytorch tensors on self.device.
+
         """
-        obs, r, done, _ = self.env.step(action)
+        obs, reward, done, _ = self.env.step(action)
         obs = self._process_obs(obs)
 
-        obs = torch.tensor(obs).to(self.device, torch.float32)
-        r = torch.tensor(r).to(self.device, torch.float32)
+        obs = torch.tensor(obs, dtype=torch.float32).to(self.device)
+        reward = torch.tensor(reward, dtype=torch.float32).to(self.device)
 
-        return obs, r, done
+        return obs, reward, done
 
     def reset(self):
         """
         Reset environment.
 
         Returns:
-        observation - numpy array
+        observation - Pytorch tensor on self.device
 
         """
         obs = self.env.reset()
         obs = self._process_obs(obs)
-        obs = torch.tensor(obs).to(self.device, torch.float32)
+        obs = torch.tensor(obs, dtype=torch.float32).to(self.device)
         return obs
 
 
 class CPEnvironment(Environment):
-    def __init__(self, device):
-        Environment.__init__(self, 'CartPole-v1', device)
+    ENVIRONMENT = 'CartPole-v1'
 
-    @staticmethod
-    def _process_obs(obs):
-        return obs
+
+class IPEnvironment(Environment):
+    ENVIRONMENT = 'Pendulum-v0'
 
 
 class FPPEnvironment(Environment):
-    def __init__(self, device):
-        Environment.__init__(self, 'FetchPickAndPlace-v1', device)
+    ENVIRONMENT = 'FetchPickAndPlace-v1'
 
     @staticmethod
     def _process_obs(obs):

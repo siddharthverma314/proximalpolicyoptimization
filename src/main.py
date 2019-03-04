@@ -20,6 +20,7 @@ parser = argparse.ArgumentParser()
 environ = parser.add_mutually_exclusive_group(required=True)
 environ.add_argument('--fpp', help="FetchPickAndPlace-v1", action='store_true')
 environ.add_argument('--cp', help="CartPole-v1", action='store_true')
+environ.add_argument('--ip', help="Pendulum-v0", action='store_true')
 
 parser.add_argument("--show-gui", action='store_true')
 parser.add_argument("--no-gpu", action='store_true')
@@ -69,31 +70,22 @@ if args.fpp:
     # TODO: Edit this
     env = environment.FPPEnvironment(DEVICE)
 
-    class Policy(nn.Module):
-        def __init__(self):
-            nn.Module.__init__(self)
-            self.__policy = nn.Sequential(
+    policy = ContinuousPolicy(
+            nn.Sequential(
                 nn.Linear(31, 20),
                 nn.ReLU(),
                 nn.Linear(20, 10),
                 nn.ReLU(),
-                nn.Linear(10, 4),
-            )
+                nn.Linear(10, 2)
+            )).to(DEVICE)
 
-        def forward(self, state):
-            actions = self.__policy(state)
-            dist = torch.distributions.Categorical(probs=actions)
-            chosen = dist.sample()
-            return chosen, actions[chosen]
-
-    policy = Policy().to(DEVICE)
     value = nn.Sequential(
         nn.Linear(31, 20),
         nn.ReLU(),
         nn.Linear(20, 10),
         nn.ReLU(),
-        nn.Linear(10, 4),
-    ).to(DEVICE)
+        nn.Linear(10, 1),
+        nn.ReLU()).to(DEVICE)
 
 
 elif args.cp:
@@ -107,6 +99,22 @@ elif args.cp:
 
     value = nn.Sequential(
         nn.Linear(4, 5),
+        nn.Sigmoid(),
+        nn.Linear(5, 1),
+        nn.ReLU()
+    ).to(DEVICE)
+
+
+elif args.ip:
+    env = environment.IPEnvironment(DEVICE)
+
+    policy = ContinuousPolicy(nn.Sequential(
+        nn.Linear(3, 5),
+        nn.ReLU(),
+        nn.Linear(5, 2))).to(DEVICE)
+
+    value = nn.Sequential(
+        nn.Linear(3, 5),
         nn.Sigmoid(),
         nn.Linear(5, 1),
         nn.ReLU()
@@ -131,10 +139,14 @@ def ppo_clip_loss(policy, arc):
 
     return torch.min(policy_factor, g).mean()
 
+def vpg_loss(policy, arc):
+    probs = policy.log_prob(policy(arc.states), arc.actions)
+    return (probs * arc.advantages).mean()
 
 def optimize_policy(policy, arc):
     for _ in range(POLICY_ITERATIONS):
-        loss = ppo_clip_loss(policy, arc)
+        #loss = ppo_clip_loss(policy, arc)
+        loss = vpg_loss(policy, arc)
         log.debug(f"Policy Loss: {loss.item()}")
         policy_optim.zero_grad()
         (-loss).backward()
