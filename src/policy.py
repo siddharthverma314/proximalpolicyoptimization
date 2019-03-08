@@ -37,10 +37,9 @@ class DiscretePolicy(Policy):
 
     @staticmethod
     def prob(probs, action):
-        if action.dim() == 0:
-            return probs[action]
-        elif action.dim() == 1:
-            return probs[torch.arange(len(action)), action]
+        action = action.squeeze(0)
+        indices = torch.arange(len(action))
+        return probs[indices, action][..., None]
 
     @staticmethod
     def log_prob(probs, action):
@@ -49,43 +48,33 @@ class DiscretePolicy(Policy):
     @staticmethod
     def choice(probs):
         dist = torch.distributions.Categorical(probs=probs)
-        return dist.sample()
+        return dist.sample()[..., None]
 
 
 class ContinuousPolicy(Policy):
     """Represents a continuous policy."""
 
-    def __init__(self, policy):
+    def __init__(self, mean, std):
         """
-        Defines a Continuous policy. The forward pass consists of three
-        modules, shared_nn, mean_nn and var_nn. The computational diagram is as
-        follows:
+        Defines a Continuous policy. The neural networks are used as follows
+        """
 
-        state ---> shared_nn --+--> mean_nn
-                               |
-                               |--> var_nn
-        """
         Policy.__init__(self)
-        self.__policy = policy
+        self.__mean = mean
+        self.__std = std
 
     def forward(self, state):
         """Returns (mean, var) tuple"""
-        policy = self.__policy(state)
-        ng = policy.shape[-1] // 2
-        if policy.dim() == 1:
-            mean = policy[:ng]
-            std = policy[ng:]
-        else:
-            mean = policy[:, :ng]
-            std = policy[:, ng:]
-        return mean, torch.abs(std)
+        mean = self.__mean(state)
+        std = self.__std(state)
+        return mean, std * std
 
     @staticmethod
     def log_prob(params, action):
         dist = torch.distributions.Normal(params[0], params[1])
         probs = dist.log_prob(action)
         if probs.dim() == 2:
-            probs = probs.sum(dim=1)
+            probs = probs.sum(1)[..., None]
         return probs
 
     @staticmethod

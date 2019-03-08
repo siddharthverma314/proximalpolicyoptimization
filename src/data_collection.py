@@ -1,6 +1,7 @@
 import logging as log
 import torch
 
+
 class Arc:
     """Stores the probability and reward of an arc"""
     def __init__(self, gamma):
@@ -22,23 +23,36 @@ class Arc:
     def compute(self, value_fn):
         """Computes rewards to go and advantages and converts data to tensors"""
         # stack tensors
-        self.states = torch.stack(self.states).detach()
-        self.actions = torch.stack(self.actions).detach()
-        self.rewards = torch.stack(self.rewards).detach()
-        self.probs = torch.stack(self.probs).detach()
+        self.states = torch.cat(self.states).detach()
+        self.actions = torch.cat(self.actions).detach()
+        self.rewards = torch.cat(self.rewards).detach()
+        self.probs = torch.cat(self.probs).detach()
 
         # compute rewards to go
         self.rewards_to_go = torch.clone(self.rewards)
-        i = len(self.rewards_to_go) - 2
+        i = self.rewards_to_go.shape[0] - 2
         while i >= 0:
-            self.rewards_to_go[i] += self.gamma * self.rewards_to_go[i+1]
+            self.rewards_to_go[i, 0] += self.gamma * self.rewards_to_go[i+1, 0]
             i -= 1
 
         #TODO: Work on new advantage function
-        self.advantages = (self.rewards_to_go - value_fn(self.states).squeeze()).detach()
+        self.advantages = self.rewards_to_go - value_fn(self.states)
 
-    def __repr__(self):
-        return f"Arc({self.rewards})"
+    def concat(self, arc):
+        self.states.append(arc.states)
+        self.actions.append(arc.actions)
+        self.rewards.append(arc.rewards)
+        self.probs.append(arc.probs)
+        self.rewards_to_go.append(arc.rewards_to_go)
+        self.advantages.append(arc.advantages)
+
+    def torchify(self):
+        self.states = torch.cat(self.states).detach()
+        self.actions = torch.cat(self.actions).detach()
+        self.rewards = torch.cat(self.rewards).detach()
+        self.probs = torch.cat(self.probs).detach()
+        self.rewards_to_go = torch.cat(self.rewards_to_go).detach()
+        self.advantages = torch.cat(self.advantages).detach()
 
 
 def generate_arc(env, policy, value_fn, max_timesteps, gamma) -> Arc:
@@ -59,19 +73,20 @@ def generate_arc(env, policy, value_fn, max_timesteps, gamma) -> Arc:
 
     for _ in range(max_timesteps):
         probs = policy(obs)
+
         action = policy.choice(probs)
         prob = policy.prob(probs, action)
 
-        obs_new, r, done = env.step(action.detach().cpu().numpy())
-        total_r += r
+        obs_new, reward, done = env.step(action)
+        total_r += reward
 
-        arc.add_obs(obs, action, r, prob)
+        arc.add_obs(obs, action, reward, prob)
         obs = obs_new
 
         if done:
             break
 
-    log.debug(f"Collected reward: {total_r}")
+    log.debug(f"Collected reward: {total_r.item()}")
     arc.compute(value_fn)
     return arc
 
@@ -89,23 +104,12 @@ def generate_data(env, policy, value_fn, data_iterations, max_timesteps, gamma):
     Returns: Arc with all the compiled data in it
     """
 
-    result = Arc(gamma)
+    arc = Arc(gamma)
+    with torch.no_grad():
+        for _ in range(data_iterations):
+            res = generate_arc(env, policy, value_fn, max_timesteps, gamma)
+            arc.concat(res)
 
-    for _ in range(data_iterations):
-        a = generate_arc(env, policy, value_fn, max_timesteps, gamma)
-        result.states.append(a.states)
-        result.actions.append(a.actions)
-        result.rewards.append(a.rewards)
-        result.probs.append(a.probs)
-        result.rewards_to_go.append(a.rewards_to_go)
-        result.advantages.append(a.advantages)
-
-    result.states = torch.cat(result.states)
-    result.actions = torch.cat(result.actions)
-    result.rewards = torch.cat(result.rewards)
-    result.probs = torch.cat(result.probs)
-    result.rewards_to_go = torch.cat(result.rewards_to_go)
-    result.advantages = torch.cat(result.advantages)
-
-    return result
+        arc.torchify()
+    return arc
 

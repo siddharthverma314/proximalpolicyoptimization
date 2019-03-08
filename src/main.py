@@ -1,8 +1,6 @@
 import argparse
 import torch
 import torch.nn as nn
-import numpy as np
-import argparse
 import environment
 import data_collection
 from policy import Policy, DiscretePolicy, ContinuousPolicy
@@ -108,10 +106,10 @@ elif args.cp:
 elif args.ip:
     env = environment.IPEnvironment(DEVICE)
 
-    policy = ContinuousPolicy(nn.Sequential(
-        nn.Linear(3, 5),
-        nn.ReLU(),
-        nn.Linear(5, 2))).to(DEVICE)
+    mean = nn.Sequential(nn.Linear(3, 5), nn.ReLU(), nn.Linear(5, 1))
+    std = nn.Sequential(nn.Linear(3, 5), nn.ReLU(), nn.Linear(5, 1))
+
+    policy = ContinuousPolicy(mean, std).to(DEVICE)
 
     value = nn.Sequential(
         nn.Linear(3, 5),
@@ -134,8 +132,8 @@ def ppo_clip_loss(policy, arc):
     policy_factor = r * arc.advantages
 
     # compute g
-    g = ((arc.advantages >= 0) * 2  - 1).float() * EPSILON + 1
-    g = g.detach() * arc.advantages
+    g = ((arc.advantages >= 0).float() * 2  - 1) * EPSILON + 1
+    g = (g * arc.advantages).detach()
 
     return torch.min(policy_factor, g).mean()
 
@@ -145,8 +143,8 @@ def vpg_loss(policy, arc):
 
 def optimize_policy(policy, arc):
     for _ in range(POLICY_ITERATIONS):
-        #loss = ppo_clip_loss(policy, arc)
-        loss = vpg_loss(policy, arc)
+        loss = ppo_clip_loss(policy, arc)
+        #loss = vpg_loss(policy, arc)
         log.debug(f"Policy Loss: {loss.item()}")
         policy_optim.zero_grad()
         (-loss).backward()
