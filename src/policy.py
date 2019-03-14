@@ -26,7 +26,7 @@ class Policy(nn.Module):
 
 class DiscretePolicy(Policy):
     """Represents a discrete policy"""
-    EPSILON = 1e-20
+    EPSILON = 1e-12
 
     def __init__(self, policy):
         Policy.__init__(self)
@@ -37,7 +37,7 @@ class DiscretePolicy(Policy):
 
     @staticmethod
     def prob(probs, action):
-        action = action.squeeze(0)
+        action = action.squeeze(1)
         indices = torch.arange(len(action))
         return probs[indices, action][..., None]
 

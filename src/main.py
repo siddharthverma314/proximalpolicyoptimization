@@ -1,12 +1,12 @@
 import argparse
-import torch
-import torch.nn as nn
-import environment
-import data_collection
-from policy import Policy, DiscretePolicy, ContinuousPolicy
-import logging as log
 import datetime
 import os
+import logging as log
+import torch
+import torch.nn as nn
+import data_collection
+import environment
+from policy import DiscretePolicy, ContinuousPolicy
 
 
 ##########
@@ -149,7 +149,6 @@ def optimize_policy(policy, arc):
         policy_optim.zero_grad()
         (-loss).backward()
         policy_optim.step()
-
 
 def value_loss(value, arc):
     v = value(arc.states).squeeze()
