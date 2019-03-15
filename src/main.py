@@ -27,6 +27,7 @@ parser.add_argument('--timesteps', help="Maximum timesteps for each actor", type
 parser.add_argument('--data-iterations', help="Number of iterations in data collection", type=int, default=100)
 parser.add_argument('--policy-iterations', help="Number of iterations in policy optimization", type=int, default=100)
 parser.add_argument('--value-iterations', help="Number of iterations in value optimization", type=int, default=100)
+parser.add_argument('--max-kl', help="Maximum KL Divergence in policy training", type=float, default=20)
 parser.add_argument('--epsilon', help="Epsilon in loss", type=float, default=0.2)
 parser.add_argument('--discount', help="Discount factor", type=float, default=0.8)
 parser.add_argument('--log', help="Whether to store a log", action='store_true')
@@ -41,8 +42,8 @@ args = parser.parse_args()
 
 if args.log:
     name = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    os.mkdir(f"log/{name}")
-    log.basicConfig(filename=f"log/{name}/log", level=log.DEBUG)
+    os.mkdir(f"../log/{name}")
+    log.basicConfig(filename=f"../log/{name}/log", level=log.DEBUG)
 else:
     log.basicConfig(level=log.DEBUG)
 
@@ -62,6 +63,7 @@ VALUE_ITERATIONS = args.value_iterations
 EPSILON = args.epsilon
 EPOCHS = args.epochs
 DISCOUNT = args.discount
+MAX_KL_DIVERGENCE = args.max_kl
 
 # environment
 if args.fpp:
@@ -142,6 +144,7 @@ def vpg_loss(policy, arc):
     return (probs * arc.advantages).mean()
 
 def optimize_policy(policy, arc):
+    previous_policy = policy(arc.states)
     for _ in range(POLICY_ITERATIONS):
         loss = ppo_clip_loss(policy, arc)
         #loss = vpg_loss(policy, arc)
@@ -149,6 +152,10 @@ def optimize_policy(policy, arc):
         policy_optim.zero_grad()
         (-loss).backward()
         policy_optim.step()
+        kld = policy.kl_divergence(policy(arc.states), previous_policy)
+        log.info(f"KL Divergence: {kld}")
+        #if kld > MAX_KL_DIVERGENCE:
+            #break
 
 def value_loss(value, arc):
     v = value(arc.states).squeeze()

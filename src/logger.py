@@ -57,3 +57,18 @@ class Logger:
         fp = f"{self.directory}/log"
         io.savemat(fp, self.dict)
         print(tc.colored(f"Saved file at {fp}", 'red'))
+
+
+default_logger = Logger()
+
+def create_array(varname):
+    default_logger.create(varname, Logger.TYPE_ARRAY)
+
+def create_scalar(varname):
+    default_logger.create(varname, Logger.TYPE_SCALAR)
+
+def log(*args):
+    default_logger.log(*args)
+
+def info(string):
+    print(string)

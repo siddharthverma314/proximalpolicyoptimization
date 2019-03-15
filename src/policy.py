@@ -23,6 +23,11 @@ class Policy(nn.Module):
         """Return a random action according to the density $$\pi(s|a)$$"""
         raise NotImplementedError
 
+    @staticmethod
+    def kl_divergence(probs1, probs2):
+        """Return a state of the current policy"""
+        raise NotImplementedError
+
 
 class DiscretePolicy(Policy):
     """Represents a discrete policy"""
@@ -49,6 +54,10 @@ class DiscretePolicy(Policy):
     def choice(probs):
         dist = torch.distributions.Categorical(probs=probs)
         return dist.sample()[..., None]
+
+    @staticmethod
+    def kl_divergence(probs1, probs2):
+        return (probs1 * torch.log(probs1 / probs2)).sum(1).mean()
 
 
 class ContinuousPolicy(Policy):
@@ -80,6 +89,13 @@ class ContinuousPolicy(Policy):
     @staticmethod
     def prob(params, action):
         return torch.exp(ContinuousPolicy.log_prob(params, action))
+
+    @staticmethod
+    def kl_divergence(params1, params2):
+        m1, s1 = params1
+        m2, s2 = params2
+        kld = torch.log(s2/s1) + (s1**2 + (m1 - m2)**2) / (2 * s2**2) - 0.5
+        return kld.mean()
 
     @staticmethod
     def choice(params):
