@@ -27,7 +27,7 @@ parser.add_argument('--timesteps', help="Maximum timesteps for each actor", type
 parser.add_argument('--data-iterations', help="Number of iterations in data collection", type=int, default=100)
 parser.add_argument('--policy-iterations', help="Number of iterations in policy optimization", type=int, default=100)
 parser.add_argument('--value-iterations', help="Number of iterations in value optimization", type=int, default=100)
-parser.add_argument('--max-kl', help="Maximum KL Divergence in policy training", type=float, default=20)
+parser.add_argument('--max-kl', help="Maximum KL Divergence in policy training", type=float, default=20.)
 parser.add_argument('--epsilon', help="Epsilon in loss", type=float, default=0.2)
 parser.add_argument('--discount', help="Discount factor", type=float, default=0.8)
 parser.add_argument('--log', help="Whether to store a log", action='store_true')
@@ -152,10 +152,10 @@ def optimize_policy(policy, arc):
         policy_optim.zero_grad()
         (-loss).backward()
         policy_optim.step()
-        kld = policy.kl_divergence(policy(arc.states), previous_policy)
+        kld = policy.kl_divergence(previous_policy, policy(arc.states))
         log.info(f"KL Divergence: {kld}")
-        #if kld > MAX_KL_DIVERGENCE:
-            #break
+        if kld > MAX_KL_DIVERGENCE:
+            break
 
 def value_loss(value, arc):
     v = value(arc.states).squeeze()
