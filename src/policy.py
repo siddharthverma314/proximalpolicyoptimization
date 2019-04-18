@@ -1,104 +1,89 @@
+import abc
 import torch
 import torch.nn as nn
 
-
-class Policy(nn.Module):
+class Policy(abc.ABC):
     """Abstract class for a policy"""
 
-    def __init__(self):
-        nn.Module.__init__(self)
-    
-    @staticmethod
-    def prob(probs, action):
-        """Return the probability/density of $$\pi(s|a)$$"""
-        raise NotImplementedError
+    @abc.abstractstaticmethod
+    def wrap_model(*args):
+        r"""Return a function that returns a policy class given an input by
+        applying the model on it and calling the base class"""
 
-    @staticmethod
-    def log_prob(probs, action):
-        """Return the log probability/density of $$\pi(s|a)$$"""
-        raise NotImplementedError
+    @abc.abstractmethod
+    def prob(self, action):
+        r"""Return the probability/density of $$\pi(s|a)$$"""
 
-    @staticmethod
-    def choice(probs):
-        """Return a random action according to the density $$\pi(s|a)$$"""
-        raise NotImplementedError
+    @abc.abstractmethod
+    def log_prob(self, action):
+        r"""Return the log probability/density of $$\pi(s|a)$$"""
 
-    @staticmethod
-    def kl_divergence(probs1, probs2):
-        """Return a state of the current policy"""
-        raise NotImplementedError
+    @abc.abstractmethod
+    def choice(self):
+        r"""Return a random action according to $$\pi(s|a)$$"""
+
+    @abc.abstractmethod
+    def kl_divergence(self, policy):
+        r"""Return the KL divergence between the current and another policy"""
 
 
 class DiscretePolicy(Policy):
     """Represents a discrete policy"""
     EPSILON = 1e-12
 
-    def __init__(self, policy):
+    def __init__(self, probs):
         Policy.__init__(self)
-        self.__policy = policy
-
-    def forward(self, state):
-        return self.__policy(state)
-
+        self.probs = probs
+        
     @staticmethod
-    def prob(probs, action):
+    def wrap_model(model):
+        return lambda x: DiscretePolicy(model(x))
+
+    def prob(self, action):
         action = action.squeeze(1)
         indices = torch.arange(len(action))
-        return probs[indices, action][..., None]
+        return self.probs[indices, action][..., None]
 
-    @staticmethod
-    def log_prob(probs, action):
-        return torch.log(DiscretePolicy.EPSILON + DiscretePolicy.prob(probs, action))
+    def log_prob(self, action):
+        return torch.log(self.EPSILON + self.prob(action))
 
-    @staticmethod
-    def choice(probs):
-        dist = torch.distributions.Categorical(probs=probs)
+    def choice(self):
+        dist = torch.distributions.Categorical(probs=self.probs)
         return dist.sample()[..., None]
 
-    @staticmethod
-    def kl_divergence(probs1, probs2):
-        return (probs1 * torch.log(probs1 / probs2)).sum(1).mean()
+    def kl_divergence(self, policy):
+        return (self.probs * (torch.log(self.probs) - torch.log(policy.probs))).sum(1).mean()
 
 
 class ContinuousPolicy(Policy):
-    """Represents a continuous policy."""
+    """Represents a gaussian continuous policy."""
 
     def __init__(self, mean, std):
-        """
-        Defines a Continuous policy. The neural networks are used as follows
-        """
-
         Policy.__init__(self)
-        self.__mean = mean
-        self.__std = std
-
-    def forward(self, state):
-        """Returns (mean, var) tuple"""
-        mean = self.__mean(state)
-        std = self.__std(state)
-        return mean, std * std
+        self.mean = mean
+        self.std = torch.abs(std)
 
     @staticmethod
-    def log_prob(params, action):
-        dist = torch.distributions.Normal(params[0], params[1])
+    def wrap_model(mean_model, std_model):
+        return lambda x: ContinuousPolicy(mean_model(x), std_model(x))
+
+    def log_prob(self, action):
+        dist = torch.distributions.Normal(self.mean, self.std)
         probs = dist.log_prob(action)
-        if probs.dim() == 2:
-            probs = probs.sum(1)[..., None]
+        # TODO: account for multiple means and variances
+        # if probs.dim() == 2:
+        #     probs = probs.sum(1)[..., None]
         return probs
 
-    @staticmethod
-    def prob(params, action):
-        return torch.exp(ContinuousPolicy.log_prob(params, action))
+    def prob(self, action):
+        return torch.exp(self.log_prob(action))
 
-    @staticmethod
-    def kl_divergence(params1, params2):
-        m1, s1 = params1
-        m2, s2 = params2
-        kld = torch.log(s2/s1) + (s1**2 + (m1 - m2)**2) / (2 * s2**2) - 0.5
-        return kld.mean()
-
-    @staticmethod
-    def choice(params):
-        dist = torch.distributions.Normal(params[0], params[1])
+    def choice(self):
+        dist = torch.distributions.Normal(self.mean, self.std)
         return dist.sample()
 
+    def kl_divergence(self, policy):
+        m1, s1 = self.mean, self.std
+        m2, s2 = policy.mean, policy.std
+        kld = torch.log(s2/s1) + (s1**2 + (m1 - m2)**2) / (2 * s2**2) - 0.5
+        return kld.mean()

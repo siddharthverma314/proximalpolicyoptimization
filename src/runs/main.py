@@ -35,6 +35,26 @@ parser.add_argument('--epochs', type=int, default=50)
 
 args = parser.parse_args()
 
+class CPEnvironment(Environment):
+    ENVIRONMENT = 'CartPole-v1'
+
+    @staticmethod
+    def _process_action(action):
+        return action.squeeze()
+
+
+class IPEnvironment(Environment):
+    ENVIRONMENT = 'Pendulum-v0'
+
+
+class FPPEnvironment(Environment):
+    ENVIRONMENT = 'FetchPickAndPlace-v1'
+
+    @staticmethod
+    def _process_obs(obs):
+        obs = np.r_[obs['observation'], obs['achieved_goal'], obs['desired_goal']]
+        return obs
+
 
 ###########
 # GLOBALS #

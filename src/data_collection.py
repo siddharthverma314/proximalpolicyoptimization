@@ -1,115 +1,163 @@
-import logging as log
+"""Handles collecting data from a policy"""
+
+from __future__ import annotations
+from typing import Dict, List, Union
 import torch
+from torch import tensor, nn
+import numpy as np
+from logger import Logger
+from environment import Environment
 
 
 class Arc:
-    """Stores the probability and reward of an arc"""
-    def __init__(self, gamma):
-        self.states = []
-        self.actions = []
-        self.rewards = []
-        self.probs = []
+    """Stores data from one iteration of an environment"""
 
-        self.rewards_to_go = []
-        self.advantages = []
+    def __init__(self, gamma: float):
+        self.data: Dict[str, Union[List[tensor], tensor]] = dict()
+        for var in "sarpRA":
+            self.data[var] = []
         self.gamma = gamma
 
     def add_obs(self, state, action, reward, prob):
-        self.states.append(state)
-        self.actions.append(action)
-        self.rewards.append(reward)
-        self.probs.append(prob.detach())
+        """
+        Add an observation to the arc
+
+        :param state: state tensor
+        :param action: action tensor
+        :param reward: reward tensor
+        :param prob: probability of taking action tensor
+        """
+        for var, val in ('s', state), ('a', action), ('r', reward), ('p', prob):
+            self.data[var].append(val)
 
     def compute(self, value_fn):
-        """Computes rewards to go and advantages and converts data to tensors"""
+        """
+        Computes rewards to go and advantages. Also converts data to tensors
+
+        :param value_fn: subclass of nn.Module
+        """
+
         # stack tensors
-        self.states = torch.cat(self.states).detach()
-        self.actions = torch.cat(self.actions).detach()
-        self.rewards = torch.cat(self.rewards).detach()
-        self.probs = torch.cat(self.probs).detach()
+        for var in "sarp":
+            self.data[var] = torch.cat(self.data[var]).detach()
 
         # compute rewards to go
-        self.rewards_to_go = torch.clone(self.rewards)
-        i = self.rewards_to_go.shape[0] - 2
+        self.data['R'] = torch.clone(self.data['r'])
+        i = self.data['R'].shape[0] - 2
         while i >= 0:
-            self.rewards_to_go[i, 0] += self.gamma * self.rewards_to_go[i+1, 0]
+            self.data['R'][i, 0] += self.gamma * self.data['R'][i+1, 0]
             i -= 1
 
         #TODO: Work on new advantage function
-        self.advantages = self.rewards_to_go - value_fn(self.states)
+        self.data['A'] = self.data['R'] - value_fn(self.data['s'])
 
     def concat(self, arc):
-        self.states.append(arc.states)
-        self.actions.append(arc.actions)
-        self.rewards.append(arc.rewards)
-        self.probs.append(arc.probs)
-        self.rewards_to_go.append(arc.rewards_to_go)
-        self.advantages.append(arc.advantages)
+        for var in "sarpRA":
+            self.data[var].append(arc.data[var])
 
     def torchify(self):
-        self.states = torch.cat(self.states).detach()
-        self.actions = torch.cat(self.actions).detach()
-        self.rewards = torch.cat(self.rewards).detach()
-        self.probs = torch.cat(self.probs).detach()
-        self.rewards_to_go = torch.cat(self.rewards_to_go).detach()
-        self.advantages = torch.cat(self.advantages).detach()
+        for var in "sarpRA":
+            self.data[var] = torch.cat(self.data[var]).detach()
+
+    @property
+    def states(self):
+        return self.data['s']
+
+    @property
+    def actions(self):
+        return self.data['a']
+
+    @property
+    def rewards(self):
+        return self.data['r']
+
+    @property
+    def rewards_to_go(self):
+        return self.data['R']
+
+    @property
+    def probs(self):
+        return self.data['p']
+
+    @property
+    def advantages(self):
+        return self.data['A']
 
 
-def generate_arc(env, policy, value_fn, max_timesteps, gamma) -> Arc:
-    """
-    Collect data.
+class DataGenerator:
+    """Generates data in the form of Arc classes by calling .generate() method"""
 
-    Inputs:
-    env - environment to run in
-    policy - instance of Policy class
-    max_timesteps - number of timesteps to truncate after
+    def __init__(self,
+                 env: Environment,
+                 data_iterations,
+                 max_timesteps,
+                 gamma,
+                 logger: Logger):
+        """
+        Initialize a new Data Generator.
 
-    Returns: An arc object
-    """
+        :param env: the environment to run the data collection in. Subclass of
+        environment.Environment
+        :param data_iterations: the number of runs to do
+        :param max_timesteps: timestep limit
+        :param gamma: decay rate
+        :param logger: instance of Logger class
+        """
+        self.env = env
+        self.data_iterations = data_iterations
+        self.max_timesteps = max_timesteps
+        self.gamma = gamma
+        self.logger = logger
 
-    obs = env.reset()
-    arc = Arc(gamma)
-    total_r = 0
+    def _generate_arc(self, policy, value_fn):
+        obs = self.env.reset()
+        arc = Arc(self.gamma)
+        total_r = 0
 
-    for _ in range(max_timesteps):
-        probs = policy(obs)
+        for _ in range(self.max_timesteps):
+            probs = policy(obs)
+            action = probs.choice()
+            prob = probs.prob(action)
 
-        action = policy.choice(probs)
-        prob = policy.prob(probs, action)
+            obs_new, reward, done = self.env.step(action)
+            total_r += reward
 
-        obs_new, reward, done = env.step(action)
-        total_r += reward
+            arc.add_obs(obs, action, reward, prob)
+            obs = obs_new
 
-        arc.add_obs(obs, action, reward, prob)
-        obs = obs_new
+            if done:
+                break
 
-        if done:
-            break
+        arc.compute(value_fn)
+        return arc, total_r
 
-    log.debug(f"Collected reward: {total_r.item()}")
-    arc.compute(value_fn)
-    return arc
+    def generate(self, policy, value_fn):
+        """
+        Generates a bunch of data and compiles it
 
+        :param policy: wrapped policy function neural network
+        :param value_fn: value function neural network
+        """
+        rewards = []
+        arcs = Arc(self.gamma)
+        with torch.no_grad():
+            for _ in range(self.data_iterations):
+                arc, total_r = self._generate_arc(policy, value_fn)
+                arcs.concat(arc)
 
-def generate_data(env, policy, value_fn, data_iterations, max_timesteps, gamma):
-    """
-    Generates a bunch of data and compiles it.
-    
-    Inputs:
-    env - environment to run in
-    policy - nn.Module
-    data_iterations - number of experiments
-    max_timesteps - timestep cutoff
+                # logging
+                rewards.append(total_r)
+                self.logger.log(f"Collected reward: {total_r}")
 
-    Returns: Arc with all the compiled data in it
-    """
+            arcs.torchify()
 
-    arc = Arc(gamma)
-    with torch.no_grad():
-        for _ in range(data_iterations):
-            res = generate_arc(env, policy, value_fn, max_timesteps, gamma)
-            arc.concat(res)
+        # logging
+        rewards = np.array(rewards)
+        data = dict()
+        data['data_reward_avg'] = rewards.mean()
+        data['data_reward_std'] = rewards.std()
+        data['data_reward_min'] = rewards.min()
+        data['data_reward_max'] = rewards.max()
+        self.logger.update(data)
 
-        arc.torchify()
-    return arc
-
+        return arcs
