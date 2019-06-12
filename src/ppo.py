@@ -42,13 +42,15 @@ def optimize_policy(policy, policy_optim,
 
         if not first_loss:
             first_loss = loss
-        #loss = vpg_loss(policy, arc)
         log.log(f"Policy Loss: {loss.item()}")
         policy_optim.zero_grad()
         (-loss).backward()
         policy_optim.step()
         kld = policy(arc.states).kl_divergence(previous_policy)
         log.log(f"KL Divergence: {kld}")
+
+        if not first_loss:
+            first_loss = loss
         if kld > max_kl_divergence:
             break
 
