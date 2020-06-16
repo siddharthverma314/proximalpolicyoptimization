@@ -22,28 +22,37 @@ log = logger.Logger("../../log")
 # HYPERPARAMETERS
 MAX_TIMESTEPS = 100
 DATA_ITERATIONS = 20
-POLICY_ITERATIONS = 200
-VALUE_ITERATIONS = 10
-EPSILON = 0.1
+POLICY_ITERATIONS = 100
+VALUE_ITERATIONS = 0 #10000
+EPSILON = 0.2
 EPOCHS = 100
-DISCOUNT = 0.9
-MAX_KL_DIVERGENCE = 20
+DISCOUNT = 0.8
+MAX_KL_DIVERGENCE = 3
 
 env = IPEnvironment(DEVICE)
-mean = nn.Sequential(nn.Linear(3, 5), nn.ReLU(), nn.Linear(5, 1)).to(DEVICE)
-std = nn.Sequential(nn.Linear(3, 5), nn.ReLU(), nn.Linear(5, 1)).to(DEVICE)
+mean = nn.Sequential(
+    nn.Linear(3, 10),
+    nn.Tanh(),
+    nn.Linear(10, 5),
+    nn.Tanh(),
+    nn.Linear(5, 1)).to(DEVICE)
+std = nn.Sequential(
+    nn.Linear(3, 10),
+    nn.Tanh(),
+    nn.Linear(10, 5),
+    nn.Tanh(),
+    nn.Linear(5, 1)).to(DEVICE)
 
 policy = ContinuousPolicy.wrap_model(mean, std)
 
 value_fn = nn.Sequential(
-    nn.Linear(3, 5),
-    nn.Sigmoid(),
-    nn.Linear(5, 1),
-    nn.ReLU()
+    nn.Linear(3, 10),
+    nn.Tanh(),
+    nn.Linear(10, 1),
 ).to(DEVICE)
 
-policy_optim = torch.optim.Adam(nn.ModuleList([mean, std]).parameters(), lr=8e-4)
-value_optim = torch.optim.Adam(value_fn.parameters())
+policy_optim = torch.optim.Adam(nn.ModuleList([mean, std]).parameters(), lr=1e-4)
+value_optim = torch.optim.Adam(value_fn.parameters(), lr=1e-2)
 
 # data
 data = data_collection.DataGenerator(env, DATA_ITERATIONS, 
@@ -53,6 +62,6 @@ for i in range(EPOCHS):
     log.log(f"Epoch {i}")
     arc = data.generate(policy, value_fn)
     ppo.optimize_policy(policy, policy_optim, arc, log,
-                        POLICY_ITERATIONS, MAX_KL_DIVERGENCE, EPSILON)
-    ppo.optimize_value(value_fn, value_optim, arc, log, VALUE_ITERATIONS)
+                        POLICY_ITERATIONS, MAX_KL_DIVERGENCE, EPSILON, False)
+    #ppo.optimize_value(value_fn, value_optim, arc, log, VALUE_ITERATIONS)
     log.step()

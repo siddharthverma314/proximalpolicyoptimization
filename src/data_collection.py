@@ -39,7 +39,7 @@ class Arc:
 
         # stack tensors
         for var in "sarp":
-            self.data[var] = torch.cat(self.data[var]).detach()
+            self.data[var] = torch.cat(self.data[var])
 
         # compute rewards to go
         self.data['R'] = torch.clone(self.data['r'])
@@ -49,7 +49,11 @@ class Arc:
             i -= 1
 
         #TODO: Work on new advantage function
-        self.data['A'] = self.data['R'] - value_fn(self.data['s'])
+        self.data['A'] = self.data['R']# - value_fn(self.data['s'])
+
+        # detach everything
+        for var in "sarp":
+            self.data[var] = self.data[var].detach()
 
     def concat(self, arc):
         for var in "sarpRA":

@@ -62,25 +62,25 @@ class ContinuousPolicy(Policy):
         Policy.__init__(self)
         self.mean = mean
         self.std = torch.abs(std)
+        self.dist = torch.distributions.Normal(
+            torch.zeros_like(mean),
+            torch.ones_like(std)
+        )
 
     @staticmethod
     def wrap_model(mean_model, std_model):
         return lambda x: ContinuousPolicy(mean_model(x), std_model(x))
 
     def log_prob(self, action):
-        dist = torch.distributions.Normal(self.mean, self.std)
-        probs = dist.log_prob(action)
-        # TODO: account for multiple means and variances
-        # if probs.dim() == 2:
-        #     probs = probs.sum(1)[..., None]
-        return probs
+        log_probs = self.dist.log_prob((action - self.mean) / torch.abs(self.std))
+        log_probs = log_probs.sum(1, True)
+        return log_probs
 
     def prob(self, action):
         return torch.exp(self.log_prob(action))
 
     def choice(self):
-        dist = torch.distributions.Normal(self.mean, self.std)
-        return dist.sample()
+        return self.dist.sample() * self.std + self.mean
 
     def kl_divergence(self, policy):
         m1, s1 = self.mean, self.std

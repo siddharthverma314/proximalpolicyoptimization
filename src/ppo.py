@@ -49,8 +49,6 @@ def optimize_policy(policy, policy_optim,
         kld = policy(arc.states).kl_divergence(previous_policy)
         log.log(f"KL Divergence: {kld}")
 
-        if not first_loss:
-            first_loss = loss
         if kld > max_kl_divergence:
             break
 
@@ -64,7 +62,8 @@ def optimize_policy(policy, policy_optim,
 
 
 def value_loss(value_fn, arc):
-    v = value_fn(arc.states).squeeze()
+    v = value_fn(arc.states)
+    #print(v)
     dot = (arc.rewards_to_go - v)**2
     loss = dot.mean()
     return loss
